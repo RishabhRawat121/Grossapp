@@ -32,11 +32,22 @@ const Popup = dynamic(
   { ssr: false }
 );
 
-function MapUpdater({ location }: { location: [number, number] }) {
+// ✅ FIX: Accept null location so we can guard inside
+function MapUpdater({ location }: { location: [number, number] | null }) {
   const map = useMap();
 
   useEffect(() => {
-    if (!location) return;
+    // ✅ FIX: Guard against null/undefined location and its values
+    if (
+      !location ||
+      !Array.isArray(location) ||
+      location.length < 2 ||
+      typeof location[0] !== "number" ||
+      typeof location[1] !== "number" ||
+      isNaN(location[0]) ||
+      isNaN(location[1])
+    ) return;
+
     map.setView(location, 16);
   }, [location, map]);
 
@@ -52,14 +63,11 @@ export default function CheckoutClient() {
 
   const router = useRouter();
 
-  const [paymentMethod, setPaymentMethod] =
-    useState<"cod" | "online">("cod");
-
-  const [location, setLocation] =
-    useState<[number, number] | null>(null);
-
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "online">("cod");
+  const [location, setLocation] = useState<[number, number] | null>(null);
   const [delivery] = useState(40);
   const [total, setTotal] = useState(0);
+  const [mapReady, setMapReady] = useState(false); // ✅ FIX: track client-side readiness
 
   const [address, setAddress] = useState({
     name: "",
@@ -72,19 +80,29 @@ export default function CheckoutClient() {
     longitute: "",
   });
 
-  // Fix Leaflet icons
+  // ✅ FIX: Mark map as ready only on client side to prevent SSR issues
   useEffect(() => {
-    const L = require("leaflet");
-    delete L.Icon.Default.prototype._getIconUrl;
+    setMapReady(true);
+  }, []);
 
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl:
-        "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-      iconUrl:
-        "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-      shadowUrl:
-        "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-    });
+  // Fix Leaflet icons — safely require only on client
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const L = require("leaflet");
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        iconUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        shadowUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      });
+    } catch (e) {
+      // Leaflet icon fix failed silently — non-critical
+    }
   }, []);
 
   // Socket identity
@@ -96,7 +114,6 @@ export default function CheckoutClient() {
     socketRef.current = socket;
 
     if (!socket.connected) socket.connect();
-
     socket.emit("identity", uid);
 
     const onConnect = () => socket.emit("identity", uid);
@@ -110,7 +127,6 @@ export default function CheckoutClient() {
   // Auto fill name/phone
   useEffect(() => {
     if (!user) return;
-
     setAddress((prev) => ({
       ...prev,
       name: user.name || "",
@@ -118,76 +134,112 @@ export default function CheckoutClient() {
     }));
   }, [user]);
 
-  // Get user location safely
+  // ✅ FIX: Get user location with strict number validation
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    if (!navigator.geolocation) {
+    if (!navigator?.geolocation) {
       toast.error("Geolocation not supported");
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        if (!pos?.coords) return;
+        // ✅ FIX: Use null checks instead of falsy checks (0 is valid but falsy)
+        if (pos == null || pos.coords == null) return;
 
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
 
-        if (!lat || !lon) return;
+        // ✅ FIX: Validate they are real finite numbers, not just truthy
+        if (
+          typeof lat !== "number" ||
+          typeof lon !== "number" ||
+          !isFinite(lat) ||
+          !isFinite(lon)
+        ) return;
 
         setLocation([lat, lon]);
       },
-      () => toast.error("Location permission denied")
+      (err) => {
+        console.warn("Geolocation error:", err.message);
+        toast.error("Location permission denied");
+      },
+      { timeout: 10000, maximumAge: 0 }
     );
   }, []);
 
-  // Reverse geocode safely
+  // ✅ FIX: Reverse geocode with strict guards before sending to Nominatim
   useEffect(() => {
-    if (!location) return;
+    if (
+      !location ||
+      !Array.isArray(location) ||
+      location.length < 2 ||
+      typeof location[0] !== "number" ||
+      typeof location[1] !== "number" ||
+      isNaN(location[0]) ||
+      isNaN(location[1])
+    ) return;
+
+    const lat = location[0];
+    const lon = location[1];
 
     axios
       .get("https://nominatim.openstreetmap.org/reverse", {
         params: {
           format: "json",
-          lat: location[0],
-          lon: location[1],
+          lat,
+          lon,
         },
       })
       .then((res) => {
+        // ✅ FIX: Guard every nested property before accessing
         if (!res?.data) return;
+
+        const displayName =
+          typeof res.data.display_name === "string"
+            ? res.data.display_name
+            : "";
+        const addrObj = res.data.address ?? {};
 
         setAddress((prev) => ({
           ...prev,
-          fulladdress: res.data.display_name || "",
-          city: res.data.address?.city || "",
-          state: res.data.address?.state || "",
-          pin: res.data.address?.postcode || "",
-          latitute: location[0].toString(),
-          longitute: location[1].toString(),
+          fulladdress: displayName,
+          city: addrObj.city || addrObj.town || addrObj.village || "",
+          state: addrObj.state || "",
+          pin: addrObj.postcode || "",
+          latitute: lat.toString(),
+          longitute: lon.toString(),
         }));
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("Reverse geocode failed:", err?.message);
+      });
   }, [location]);
 
   // Calculate total
   useEffect(() => {
     const subtotal =
-      cart?.reduce(
-        (acc, item) =>
-          acc + item.price * item.quantity,
-        0
-      ) || 0;
+      Array.isArray(cart)
+        ? cart.reduce(
+            (acc, item) =>
+              acc +
+              (typeof item?.price === "number" ? item.price : 0) *
+                (typeof item?.quantity === "number" ? item.quantity : 0),
+            0
+          )
+        : 0;
 
     setTotal(subtotal + delivery);
   }, [cart, delivery]);
 
-  const orderItems = cart?.map((item) => ({
-    groceries: item._id,
-    quantity: item.quantity,
-    price: item.price,
-    image: item.image,
-  })) || [];
+  const orderItems = Array.isArray(cart)
+    ? cart.map((item) => ({
+        groceries: item._id,
+        quantity: item.quantity,
+        price: item.price,
+        image: item.image,
+      }))
+    : [];
 
   const placeOrder = () => {
     if (!location) return toast.error("Select location");
@@ -209,23 +261,34 @@ export default function CheckoutClient() {
     if (!location) return toast.error("Select location");
 
     try {
-      const { data } = await axios.post(
-        "/api/user/payment",
-        {
-          userId: user?._id,
-          items: orderItems,
-          paymentMethod: "online",
-          totalAmount: total,
-          address,
-        }
-      );
+      const { data } = await axios.post("/api/user/payment", {
+        userId: user?._id,
+        items: orderItems,
+        paymentMethod: "online",
+        totalAmount: total,
+        address,
+      });
 
       if (data?.url) window.location.href = data.url;
     } catch (err: any) {
-      toast.error(
-        err?.response?.data?.message || "Payment failed"
-      );
+      toast.error(err?.response?.data?.message || "Payment failed");
     }
+  };
+
+  // ✅ FIX: Helper to check if location is valid before rendering map
+  const isValidLocation = (
+    loc: [number, number] | null
+  ): loc is [number, number] => {
+    return (
+      Array.isArray(loc) &&
+      loc.length === 2 &&
+      typeof loc[0] === "number" &&
+      typeof loc[1] === "number" &&
+      isFinite(loc[0]) &&
+      isFinite(loc[1]) &&
+      !isNaN(loc[0]) &&
+      !isNaN(loc[1])
+    );
   };
 
   return (
@@ -234,27 +297,54 @@ export default function CheckoutClient() {
 
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">
-              Delivery Address
-            </h2>
+            <h2 className="text-xl font-semibold mb-4">Delivery Address</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input value={address.name} readOnly className="border p-2 rounded" />
-              <input value={address.phone} readOnly className="border p-2 rounded" />
-              <input value={address.fulladdress} readOnly className="border p-2 rounded md:col-span-2" />
-              <input value={address.city} readOnly className="border p-2 rounded" />
-              <input value={address.state} readOnly className="border p-2 rounded" />
-              <input value={address.pin} readOnly className="border p-2 rounded md:col-span-2" />
+              <input
+                value={address.name}
+                readOnly
+                placeholder="Name"
+                className="border p-2 rounded"
+              />
+              <input
+                value={address.phone}
+                readOnly
+                placeholder="Phone"
+                className="border p-2 rounded"
+              />
+              <input
+                value={address.fulladdress}
+                readOnly
+                placeholder="Full Address"
+                className="border p-2 rounded md:col-span-2"
+              />
+              <input
+                value={address.city}
+                readOnly
+                placeholder="City"
+                className="border p-2 rounded"
+              />
+              <input
+                value={address.state}
+                readOnly
+                placeholder="State"
+                className="border p-2 rounded"
+              />
+              <input
+                value={address.pin}
+                readOnly
+                placeholder="PIN Code"
+                className="border p-2 rounded md:col-span-2"
+              />
             </div>
           </div>
 
           <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">
-              Locate on Map
-            </h2>
+            <h2 className="text-xl font-semibold mb-4">Locate on Map</h2>
 
             <div className="h-72 rounded overflow-hidden">
-              {location && (
+              {/* ✅ FIX: Only render map on client AND with a fully validated location */}
+              {mapReady && isValidLocation(location) ? (
                 <MapContainer
                   center={location}
                   zoom={16}
@@ -266,6 +356,12 @@ export default function CheckoutClient() {
                   </Marker>
                   <MapUpdater location={location} />
                 </MapContainer>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-500 text-sm">
+                  {mapReady
+                    ? "Waiting for location permission..."
+                    : "Loading map..."}
+                </div>
               )}
             </div>
           </div>
@@ -273,9 +369,7 @@ export default function CheckoutClient() {
 
         <div className="space-y-6">
           <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-xl font-semibold">
-              Payment Method
-            </h2>
+            <h2 className="text-xl font-semibold">Payment Method</h2>
 
             <button
               onClick={() => setPaymentMethod("online")}
@@ -303,9 +397,7 @@ export default function CheckoutClient() {
           </div>
 
           <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">
-              Total
-            </h2>
+            <h2 className="text-xl font-semibold mb-4">Total</h2>
 
             <div className="flex justify-between font-bold text-lg">
               <span>Total</span>
@@ -313,11 +405,7 @@ export default function CheckoutClient() {
             </div>
 
             <button
-              onClick={
-                paymentMethod === "online"
-                  ? paymentOnline
-                  : placeOrder
-              }
+              onClick={paymentMethod === "online" ? paymentOnline : placeOrder}
               className="w-full mt-4 bg-green-600 text-white py-3 rounded text-lg font-semibold hover:bg-green-700"
             >
               Place Order
