@@ -99,9 +99,9 @@ export async function PATCH(req: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     const normalizedStatus = status.toLowerCase();
-    const validStatuses = ["pending", "out of delivery"];
+    const validStatuses = ["pending", "out of delivery", "delivered"];
 
     if (!validStatuses.includes(normalizedStatus)) {
       return NextResponse.json(
@@ -117,17 +117,18 @@ export async function PATCH(req: NextRequest) {
         { status: 404 }
       );
     }
-    
+
     order.status = normalizedStatus;
-   
+
     if (normalizedStatus === "out of delivery" && !order.assignment) {
       const { latitute, longitute } = order.address || {};
 
       if (latitute == null || longitute == null) {
         await order.save();
+        const updatedOrder = await Order.findById(orderId).populate("user");
         return NextResponse.json({
           message: "Order updated, but location missing for assignment",
-          order,
+          order: updatedOrder,
         });
       }
 
@@ -144,12 +145,10 @@ export async function PATCH(req: NextRequest) {
         },
       });
 
-     
-      console.log("the nearbydeliveryboys",nearByDeliveryBoys);
       const nearByIds = nearByDeliveryBoys.map((b) => b._id);
-      await User.findByIdAndUpdate(nearByIds,{
-        working:true
-      });
+
+      await User.updateMany({ _id: { $in: nearByIds } }, { working: true });
+
       const busyIds = await DeliveryAssignment.find({
         assignedTo: { $in: nearByIds },
         status: { $nin: ["broadcasted", "completed"] },
@@ -163,37 +162,36 @@ export async function PATCH(req: NextRequest) {
 
       if (availableDeliveryBoys.length === 0) {
         await order.save();
+        const updatedOrder = await Order.findById(orderId).populate("user");
         return NextResponse.json({
           message: "No available delivery boys",
-          order,
+          order: updatedOrder,
         });
       }
 
       const deliveryAssignment = await DeliveryAssignment.create({
-       order: order._id,
-       broadcastedTo: availableDeliveryBoys.map(b => b._id),
-       status: "broadcasted",
-       address: order.address.fulladdress, 
-       total:order.totalAmount
+        order: order._id,
+        broadcastedTo: availableDeliveryBoys.map((b) => b._id),
+        status: "broadcasted",
+        address: order.address.fulladdress,
+        total: order.totalAmount,
       });
 
-
       order.assignment = deliveryAssignment._id;
-
       await order.save();
+
+      const updatedOrder = await Order.findById(orderId).populate("user");
 
       const deliveryRequestPayload = {
         orderId: String(order._id),
         assignmentId: String(deliveryAssignment._id),
         customerAddress: order.address.fulladdress,
         totalAmount: order.totalAmount,
-        items: order.items
+        items: order.items,
       };
-  
-       
+
       for (const boy of availableDeliveryBoys) {
         if (boy.socketId) {
-          console.log("logged delivery boy",boy.socketId)
           await emitEventHandler(
             "new-delivery-request",
             deliveryRequestPayload,
@@ -205,17 +203,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({
         message: "Order updated successfully",
         assignment: deliveryAssignment._id,
-        order,
+        order: updatedOrder,
       });
     }
 
     await order.save();
 
-    
+    const updatedOrder = await Order.findById(orderId).populate("user");
 
     return NextResponse.json({
       message: "Order updated successfully",
-      order,
+      order: updatedOrder,
     });
   } catch (error) {
     return NextResponse.json(
