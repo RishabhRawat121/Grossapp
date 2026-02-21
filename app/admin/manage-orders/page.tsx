@@ -6,12 +6,11 @@ import { User, MapPin, CreditCard } from "lucide-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { getSocket } from "@/app/lib/socket";
-import emitEventHandler from "@/app/lib/emitEventHandler";
 
 interface IOrderItem {
   id: string;
   name: string;
-  price: number;
+  price: string;
   quantity: number;
   unit: string;
   image: string;
@@ -21,15 +20,26 @@ interface IOrder {
   id: string;
   user: string;
   totalAmount: number;
-  status: "pending" | "out of delivery";
-  paymentMethod: string;
+  status: "pending" | "out of delivery" | "delivered";
+  paymentMethod: "cod" | "online";
   date: string;
-  address: any;
+  address: {
+    fullName?: string;
+    mobile?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    fulladdress?: string;
+    latitute?: number;
+    longitute?: number;
+  };
   items: IOrderItem[];
+  assignment?: string;
+  assignmentDeliveryBoy?: string;
 }
 
 const mapOrder = (order: any): IOrder => ({
-  id: order.id || order._id,
+  id: order._id || order.id,
   user:
     typeof order.user === "string"
       ? order.user
@@ -37,9 +47,26 @@ const mapOrder = (order: any): IOrder => ({
   date: order.date || new Date(order.updatedAt).toLocaleDateString(),
   status: order.status?.toLowerCase() || "pending",
   paymentMethod: order.paymentMethod,
-  totalAmount: order.totalAmount,
-  address: order.address,
-  items: Array.isArray(order.items) ? order.items : [],
+  totalAmount: Number(order.totalAmount),
+  address: order.address || {},
+  items: Array.isArray(order.items)
+    ? order.items.map((item: any) => ({
+        id: item._id || item.id || item.groceries,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        unit: item.unit,
+        image: item.image,
+      }))
+    : [],
+  assignment: order.assignment?._id
+    ? String(order.assignment._id)
+    : order.assignment
+    ? String(order.assignment)
+    : undefined,
+  assignmentDeliveryBoy: order.assignmentDeliveryBoy
+    ? String(order.assignmentDeliveryBoy)
+    : undefined,
 });
 
 export default function ManageOrdersPage() {
@@ -49,6 +76,7 @@ export default function ManageOrdersPage() {
   const [orders, setOrders] = useState<IOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -58,7 +86,7 @@ export default function ManageOrdersPage() {
         const res = await axios.get("/api/user/order");
         setOrders(res.data.orders.map(mapOrder));
       } catch {
-        setError("failed to load order");
+        setError("Failed to load orders");
       } finally {
         setLoading(false);
       }
@@ -81,15 +109,17 @@ export default function ManageOrdersPage() {
   }, [userId]);
 
   const updateStatus = async (id: string, status: IOrder["status"]) => {
+    setUpdatingId(id);
     try {
       const res = await axios.patch(`/api/user/order?id=${id}`, { status });
       const updatedOrder = mapOrder(res.data.order);
-      console.log("the update status",updatedOrder.id);
       setOrders((prev) =>
-        prev.map((order) => (order.id === id ? updatedOrder : order))
+        prev.map((order) => (order.id === updatedOrder.id ? updatedOrder : order))
       );
     } catch {
       alert("Failed to update order status");
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -132,7 +162,6 @@ export default function ManageOrdersPage() {
                   <h2 className="font-semibold">Order #{order.id}</h2>
                   <p className="text-sm text-gray-500">{order.date}</p>
                 </div>
-
                 <span className="px-4 py-1 rounded-full text-sm font-semibold capitalize bg-gray-100">
                   {order.status}
                 </span>
@@ -160,25 +189,25 @@ export default function ManageOrdersPage() {
                         : order.paymentMethod}
                     </span>
                   </div>
-
                   <span className="font-semibold text-green-600 text-base">
                     ₹{order.totalAmount}
                   </span>
                 </div>
+
               </div>
+
               <div className="mt-6 flex justify-end">
                 <select
                   value={order.status}
+                  disabled={updatingId === order.id}
                   onChange={(e) =>
-                    updateStatus(
-                      order.id,
-                      e.target.value as IOrder["status"]
-                    )
+                    updateStatus(order.id, e.target.value as IOrder["status"])
                   }
                   className="border rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="pending">Pending</option>
                   <option value="out of delivery">Out of delivery</option>
+                  <option value="delivered">Delivered</option>
                 </select>
               </div>
             </motion.div>
