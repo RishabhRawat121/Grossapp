@@ -234,11 +234,21 @@ export default function DeliveryBoyPage() {
   }, [userId, isTracking, activeOrderId, dispatch, joinedRoom]);
 
   const acceptDelivery = async (requestId: string) => {
+    console.log("Accept delivery triggered for:", requestId);
     const req = requests.find((r) => r._id === requestId);
-    if (!req) return;
+    
+    if (!req) {
+      console.error("Request not found for ID:", requestId);
+      return;
+    }
 
-    const { assignmentId, order: orderId } = req;
-    if (!orderId || !assignmentId) return;
+    const assignmentId = req.assignmentId;
+    const orderId = req.order;
+
+    if (!orderId || !assignmentId) {
+      console.error("Order ID or Assignment ID not found");
+      return;
+    }
 
     try {
       const res = await fetch(`/api/deliveryBoy/patch-assign/${assignmentId}`, {
@@ -247,16 +257,23 @@ export default function DeliveryBoyPage() {
         body: JSON.stringify({ action: "accept", userId }),
       });
 
-      if (!res.ok) return;
-
-      setAccept(true);
+      if (!res.ok) {
+        console.error("Failed to accept delivery");
+        return;
+      }
+      Setaccept(true);
       setRequests((prev) =>
-        prev.map((r) => (r._id === requestId ? { ...r, status: "accept" } : r))
+        prev.map((r) =>
+          r._id === requestId ? { ...r, status: "accept" } : r
+        )
       );
+
       setActiveOrderId(orderId);
       setIsTracking(true);
-      setMessage("Delivery accepted! Location tracking active.");
+
+      setMessage("Delivery accepted successfully! Location tracking active.");
     } catch (err) {
+      console.error("Error accepting delivery:", err);
       setMessage("Something went wrong");
     }
 
@@ -457,11 +474,11 @@ export default function DeliveryBoyPage() {
               ) : (
                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                   <button
-                    onClick={() => acceptDelivery(req._id)}
-                    className="flex-1 bg-green-600 text-white py-2.5 sm:py-3 rounded-lg font-semibold hover:bg-green-700 transition text-sm sm:text-base"
-                  >
-                    Accept Delivery
-                  </button>
+                      onClick={() => acceptDelivery(req._id)}
+                      className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"
+                    >
+                      Accept Delivery
+                    </button>
                   <button
                     onClick={() => rejectDelivery(req.assignmentId)}
                     className="flex-1 bg-red-600 text-white py-2.5 sm:py-3 rounded-lg font-semibold hover:bg-red-700 transition text-sm sm:text-base"
