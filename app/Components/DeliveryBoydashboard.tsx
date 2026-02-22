@@ -27,7 +27,7 @@ interface DeliveryRequest {
 
 export default function DeliveryBoyPage() {
   const { data: session } = useSession();
-  const userId = (session?.user as any)?.id;
+  const userId = session?.user?.id;
 
   const dispatch = useDispatch();
   const location = useSelector((state: RootState) => state.location.locationData);
@@ -234,19 +234,29 @@ export default function DeliveryBoyPage() {
   }, [userId, isTracking, activeOrderId, dispatch, joinedRoom]);
 
   const acceptDelivery = async (requestId: string) => {
-    console.log("Accept delivery triggered for:", requestId);
+    console.log("🟡 acceptDelivery called with _id:", requestId);
+
     const req = requests.find((r) => r._id === requestId);
-    
+    console.log("🟡 Found req:", req);
+
     if (!req) {
-      console.error("Request not found for ID:", requestId);
+      console.error("❌ Request not found for _id:", requestId);
       return;
     }
 
-    const assignmentId = req.assignmentId;
-    const orderId = req.order;
+    // ✅ assignmentId and _id are the same thing now
+    const { _id: assignmentId, order: orderId } = req;
 
-    if (!orderId || !assignmentId) {
-      console.error("Order ID or Assignment ID not found");
+    if (!orderId) {
+      console.error("❌ orderId is missing on req:", req);
+      return;
+    }
+    if (!assignmentId) {
+      console.error("❌ assignmentId is missing on req:", req);
+      return;
+    }
+    if (!userId) {
+      console.error("❌ userId is undefined");
       return;
     }
 
@@ -257,28 +267,32 @@ export default function DeliveryBoyPage() {
         body: JSON.stringify({ action: "accept", userId }),
       });
 
+      console.log("🟡 API response status:", res.status);
+      const responseData = await res.json();
+      console.log("🟡 API response body:", responseData);
+
       if (!res.ok) {
-        console.error("Failed to accept delivery");
+        console.error("❌ API failed:", responseData);
+        setMessage("Failed to accept delivery");
         return;
       }
-      Setaccept(true);
-      setRequests((prev) =>
-        prev.map((r) =>
-          r._id === requestId ? { ...r, status: "accept" } : r
-        )
-      );
 
+      console.log("✅ Accept successful!");
+      setAccept(true);
+      setRequests((prev) =>
+        prev.map((r) => (r._id === requestId ? { ...r, status: "accept" } : r))
+      );
       setActiveOrderId(orderId);
       setIsTracking(true);
-
-      setMessage("Delivery accepted successfully! Location tracking active.");
+      setMessage("Delivery accepted! Location tracking active.");
     } catch (err) {
-      console.error("Error accepting delivery:", err);
+      console.error("❌ Catch error:", err);
       setMessage("Something went wrong");
     }
 
     setTimeout(() => setMessage(""), 3000);
   };
+
 
   const rejectDelivery = async (assignmentId: string) => {
     try {
@@ -474,11 +488,11 @@ export default function DeliveryBoyPage() {
               ) : (
                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                   <button
-                      onClick={() => acceptDelivery(req._id)}
-                      className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"
-                    >
-                      Accept Delivery
-                    </button>
+                    onClick={() => acceptDelivery(req._id)}
+                    className="flex-1 bg-green-600 text-white py-2.5 sm:py-3 rounded-lg font-semibold hover:bg-green-700 transition text-sm sm:text-base"
+                  >
+                    Accept Delivery
+                  </button>
                   <button
                     onClick={() => rejectDelivery(req.assignmentId)}
                     className="flex-1 bg-red-600 text-white py-2.5 sm:py-3 rounded-lg font-semibold hover:bg-red-700 transition text-sm sm:text-base"
