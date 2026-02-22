@@ -1,17 +1,10 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  ArrowLeft,
-  ArrowUp,
-  ArrowDown,
-  CreditCard,
-  MapPin,
-} from "lucide-react";
+import { ArrowLeft, ArrowUp, ArrowDown, CreditCard, MapPin } from "lucide-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { getSocket } from "@/app/lib/socket";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface IOrderItem {
@@ -42,21 +35,18 @@ interface IOrder {
 export default function MyOrdersPage() {
   const { data: session, status } = useSession();
   const userId = (session?.user as any)?.id;
-  const router = useRouter();
-  const [num, Setnum] = useState<any>();
+
+  const [num, setNum] = useState<any>();
   const [orders, setOrders] = useState<IOrder[]>([]);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-
   const mapOrder = (order: any): IOrder => ({
     id: order._id,
     date: new Date(order.updatedAt).toLocaleDateString(),
     status:
-      (order.status || "pending").charAt(0).toUpperCase() +
-      order.status?.slice(1),
+      (order.status || "pending").charAt(0).toUpperCase() + order.status?.slice(1),
     paymentMethod: order.paymentMethod,
     totalAmount: order.totalAmount,
     address: order.address,
@@ -73,12 +63,7 @@ export default function MyOrdersPage() {
   });
 
   useEffect(() => {
-    console.log("my live locations", location);
-  });
-
-  useEffect(() => {
     if (status !== "authenticated" || !userId) return;
-
     axios
       .get(`/api/user/order?userId=${userId}`)
       .then((res) => setOrders(res.data.orders.map(mapOrder)))
@@ -88,89 +73,66 @@ export default function MyOrdersPage() {
 
   useEffect(() => {
     if (orders.length === 0) return;
-
     const fetchDeliveryAssignments = async () => {
       try {
         const updatedOrders = await Promise.all(
           orders.map(async (order) => {
             try {
-              const res = await axios.get(
-                `/api/deliveryBoy/patch-assign/${userId}`
-              );
-              Setnum(res.data.data.deliveryBoyContact);
-              return {
-                ...order,
-                deliveryBoyContact: res.data?.data?.deliveryBoyContact,
-              };
+              const res = await axios.get(`/api/deliveryBoy/patch-assign/${userId}`);
+              setNum(res.data.data.deliveryBoyContact);
+              return { ...order, deliveryBoyContact: res.data?.data?.deliveryBoyContact };
             } catch {
               return order;
             }
           })
         );
-
         setOrders(updatedOrders);
       } catch (err) {
         console.error("Delivery assignment fetch failed", err);
       }
     };
-
     fetchDeliveryAssignments();
   }, [orders.length]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !userId) return;
+  if (status !== "authenticated" || !userId) return;
 
-    const socket = getSocket();
+  const socket = getSocket();
 
-    socket.on("connect", () => socket.emit("identity", userId));
+  socket.on("connect", () => {
+    socket.emit("identity", userId);
+  });
 
-    socket.on("new-order", (order: any) => {
-      setOrders((prev) => [mapOrder(order), ...prev]);
-    });
+  const activeOrder = orders.find((o) => o.status === "Pending");
+  if (!activeOrder) return;
 
-    socket.on("status", (updatedOrder: any) => {
-      const mapped = mapOrder(updatedOrder);
-      setOrders((prev) =>
-        prev.map((o) => (o.id === mapped.id ? mapped : o))
-      );
-    });
+  // ✅ JOIN ROOM AFTER REFRESH
+  socket.emit("join-order", activeOrder.id);
 
-    socket.on("order-data", (data: any) => {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === data.orderId
-            ? { ...o, deliveryBoyContact: data.number }
-            : o
-        )
-      );
-    });
+  let watchId: number | null = null;
 
-    if (navigator.geolocation) {
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setLocation({ lat: latitude, lng: longitude });
+  if (navigator.geolocation) {
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
 
-          socket.emit("deli-loc", {
-            userId,
-            lat: latitude,
-            lng: longitude,
-          });
-        },
-        (err) => console.error("Location error:", err),
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
-      );
+        socket.emit("customer-location", {
+          userId,
+          orderId: activeOrder.id,
+          lat: latitude,
+          lon: longitude,
+        });
+      },
+      (err) => console.error("Location error:", err),
+      { enableHighAccuracy: true }
+    );
+  }
 
-      return () => {
-        navigator.geolocation.clearWatch(watchId);
-        socket.disconnect();
-      };
-    }
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [status, userId]);
+  return () => {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    socket.emit("leave-order", activeOrder.id);
+  };
+}, [status, userId, orders]);
 
   function callNumber(phone?: string) {
     if (!phone) return alert("Delivery number not available yet");
@@ -178,27 +140,10 @@ export default function MyOrdersPage() {
     if (clean) window.location.href = `tel:${clean}`;
   }
 
-  if (status === "loading") {
-    return (
-      <div className="text-center mt-20 text-gray-500">Loading session...</div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="text-center mt-20 text-gray-500">Please log in</div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="text-center mt-20 text-gray-500">Loading orders...</div>
-    );
-  }
-
-  if (error) {
-    return <div className="text-center mt-20 text-red-500">{error}</div>;
-  }
+  if (status === "loading") return <div className="text-center mt-20 text-gray-500">Loading session...</div>;
+  if (!session) return <div className="text-center mt-20 text-gray-500">Please log in</div>;
+  if (loading) return <div className="text-center mt-20 text-gray-500">Loading orders...</div>;
+  if (error) return <div className="text-center mt-20 text-red-500">{error}</div>;
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
@@ -218,9 +163,7 @@ export default function MyOrdersPage() {
             <div className="p-5">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-800">
-                    Order #{order.id}
-                  </h2>
+                  <h2 className="text-xl font-semibold text-gray-800">Order #{order.id}</h2>
                   <p className="text-sm text-gray-500">{order.date}</p>
                 </div>
                 <span
@@ -247,14 +190,10 @@ export default function MyOrdersPage() {
                 )}
                 <div className="flex items-center gap-2">
                   <CreditCard className="text-blue-500" />
-                  <span>
-                    {order.paymentMethod === "cod"
-                      ? "Cash on Delivery"
-                      : "Paid via Card"}
-                  </span>
+                  <span>{order.paymentMethod === "cod" ? "Cash on Delivery" : "Paid via Card"}</span>
                 </div>
               </div>
-              
+
               <div className="mt-4 flex flex-wrap gap-3">
                 <button
                   onClick={() => callNumber(num)}
@@ -269,28 +208,19 @@ export default function MyOrdersPage() {
                 >
                   Live Track
                 </Link>
-                
+
                 <button
-                  onClick={() =>
-                    setOpenOrderId(openOrderId === order.id ? null : order.id)
-                  }
+                  onClick={() => setOpenOrderId(openOrderId === order.id ? null : order.id)}
                   className="ml-auto flex items-center gap-1 px-3 py-2 bg-gray-200 text-gray-800 rounded-lg font-medium hover:bg-gray-300 transition"
                 >
                   {openOrderId === order.id ? (
-                    <>
-                      <ArrowUp className="w-4 h-4" />
-                      Hide Items
-                    </>
+                    <><ArrowUp className="w-4 h-4" /> Hide Items</>
                   ) : (
-                    <>
-                      <ArrowDown className="w-4 h-4" />
-                      View Items
-                    </>
+                    <><ArrowDown className="w-4 h-4" /> View Items</>
                   )}
                 </button>
               </div>
 
-              {/* Item List */}
               <AnimatePresence>
                 {openOrderId === order.id && (
                   <motion.div
@@ -313,17 +243,11 @@ export default function MyOrdersPage() {
                             />
                           )}
                           <div>
-                            <p className="font-medium text-gray-800">
-                              {item.name}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {item.quantity} × {item.unit}
-                            </p>
+                            <p className="font-medium text-gray-800">{item.name}</p>
+                            <p className="text-sm text-gray-500">{item.quantity} × {item.unit}</p>
                           </div>
                         </div>
-                        <p className="font-semibold text-green-600">
-                          ₹{item.price * item.quantity}
-                        </p>
+                        <p className="font-semibold text-green-600">₹{item.price * item.quantity}</p>
                       </div>
                     ))}
                   </motion.div>
