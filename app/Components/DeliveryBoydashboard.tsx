@@ -27,7 +27,7 @@ interface DeliveryRequest {
 
 export default function DeliveryBoyPage() {
   const { data: session } = useSession();
-  const userId = session?.user?.id;
+  const userId = (session?.user as any)?.id;
 
   const dispatch = useDispatch();
   const location = useSelector((state: RootState) => state.location.locationData);
