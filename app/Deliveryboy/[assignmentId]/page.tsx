@@ -62,7 +62,7 @@ function MapFlyTo({ center }: { center: [number, number] }) {
 
 export default function DeliveryBoyPage() {
   const params = useParams();
-  const orderId = (params?.orderId as string) ?? "demo-order-123";
+  const orderId = (params?.assignmentId as string) ?? (params?.orderId as string) ?? "demo-order-123";
   const watchIdRef = useRef<number | null>(null);
 
   console.log("Params:", params);
@@ -104,11 +104,13 @@ export default function DeliveryBoyPage() {
   useEffect(() => {
     const socket = getSocket();
 
-    if (socket.connected) {
-      socket.emit("join-order", orderId);
-    } else {
-      socket.on("connect", () => socket.emit("join-order", orderId));
-    }
+  const joinRoom = () => socket.emit("join-order", orderId);
+
+if (socket.connected) {
+  joinRoom();
+} else {
+  socket.once("connect", joinRoom);
+}
 
     socket.on("customer-location", (data: any) => {
       console.log("the customer location data",data)
