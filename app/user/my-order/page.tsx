@@ -78,7 +78,7 @@ export default function MyOrdersPage() {
         const updatedOrders = await Promise.all(
           orders.map(async (order) => {
             try {
-              const res = await axios.get(`/api/deliveryBoy/patch-assign/${userId}`);
+              const res = await axios.get(`/api/deliveryBoy/patch-assign/${order.id}`);
               setNum(res.data.data.deliveryBoyContact);
               return { ...order, deliveryBoyContact: res.data?.data?.deliveryBoyContact };
             } catch {
