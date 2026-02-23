@@ -106,8 +106,11 @@ export default function MyOrdersPage() {
   const activeOrder = orders.find((o) => o.status === "Pending");
   if (!activeOrder) return;
 
-  // ✅ JOIN ROOM AFTER REFRESH
+ if (socket.connected) {
   socket.emit("join-order", activeOrder.id);
+} else {
+  socket.once("connect", () => socket.emit("join-order", activeOrder.id));
+}
 
   let watchId: number | null = null;
 
