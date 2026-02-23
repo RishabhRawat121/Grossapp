@@ -305,18 +305,6 @@ socket.on("deli-loc", (data: any) => {
           </div>
         )}
 
-        {userLoc && deliveryLoc && (
-          <div className="bg-white rounded-2xl shadow-lg p-4">
-            <a
-              href={`https://www.google.com/maps/dir/${deliveryLoc[0]},${deliveryLoc[1]}/${userLoc[0]},${userLoc[1]}`}
-              target="_blank"
-              rel="noreferrer"
-              className="block w-full text-center bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition"
-            >
-              🗺️ View Route on Google Maps
-            </a>
-          </div>
-        )}
       </div>
     </div>
   );
