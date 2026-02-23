@@ -64,7 +64,7 @@ const Login = () => {
           : "bg-gray-300 text-gray-500 cursor-not-allowed"
       }`}
     >
-      {loading ?<Loader2 className='w-5 h-5 animate-spin'/>:"Register"}
+      {loading ?<Loader2 className='w-5 h-5 animate-spin'/>:"Login"}
      
     </button>
   );
@@ -92,7 +92,14 @@ const Login = () => {
 
 
     </motion.form>
-    <p className='flex justify-center mt-10 gap-1' onClick={()=>router.push("/register")}>Already have an account ?<LogIn className='w-4 h-4 mt-1'/><span className='text-green-600'>SignIn</span></p>
+   <p
+  className="flex justify-center mt-10 gap-1 cursor-pointer"
+  onClick={() => router.push("/register")}
+>
+  Don’t have an account?
+  <LogIn className="w-4 h-4 mt-1" />
+  <span className="text-green-600">Sign Up</span>
+</p>
     </div>
   )
 }

@@ -91,7 +91,7 @@ const RegisterForm = ({previousStep}:propType) => {
 
    </span>
 </div>
- <div onClick={()=>signIn("google",{callbackUrl:"/"})} className="
+ <div onClick={()=>signIn("google",{callbackUrl:"/Login"})} className="
   w-full flex items-center justify-center gap-3
   border border-gray-300 hover:bg-gray-50
   py-3 rounded-xl text-gray-700 font-medium
