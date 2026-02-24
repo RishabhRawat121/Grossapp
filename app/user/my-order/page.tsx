@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowUp, ArrowDown, CreditCard, MapPin } from "lucide-react";
@@ -36,7 +37,6 @@ export default function MyOrdersPage() {
   const { data: session, status } = useSession();
   const userId = (session?.user as any)?.id;
 
-  const [num, setNum] = useState<any>();
   const [orders, setOrders] = useState<IOrder[]>([]);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,7 +46,8 @@ export default function MyOrdersPage() {
     id: order._id,
     date: new Date(order.updatedAt).toLocaleDateString(),
     status:
-      (order.status || "pending").charAt(0).toUpperCase() + order.status?.slice(1),
+      (order.status || "pending").charAt(0).toUpperCase() +
+      order.status?.slice(1),
     paymentMethod: order.paymentMethod,
     totalAmount: order.totalAmount,
     address: order.address,
@@ -73,69 +74,76 @@ export default function MyOrdersPage() {
 
   useEffect(() => {
     if (orders.length === 0) return;
+
     const fetchDeliveryAssignments = async () => {
       try {
         const updatedOrders = await Promise.all(
           orders.map(async (order) => {
             try {
-              const res = await axios.get(`/api/deliveryBoy/patch-assign/${order.id}`);
-              setNum(res.data.data.deliveryBoyContact);
-              return { ...order, deliveryBoyContact: res.data?.data?.deliveryBoyContact };
+              const res = await axios.get(
+                `/api/deliveryBoy/patch-assign/${order.id}`
+              );
+              return {
+                ...order,
+                deliveryBoyContact:
+                  res.data?.data?.deliveryBoyContact || undefined,
+              };
             } catch {
               return order;
             }
           })
         );
         setOrders(updatedOrders);
-      } catch (err) {
-        console.error("Delivery assignment fetch failed", err);
-      }
+      } catch {}
     };
+
     fetchDeliveryAssignments();
   }, [orders.length]);
 
   useEffect(() => {
-  if (status !== "authenticated" || !userId) return;
+    if (status !== "authenticated" || !userId) return;
 
-  const socket = getSocket();
+    const socket = getSocket();
 
-  socket.on("connect", () => {
-    socket.emit("identity", userId);
-  });
+    socket.on("connect", () => {
+      socket.emit("identity", userId);
+    });
 
-  const activeOrder = orders.find((o) => o.status === "Pending");
-  if (!activeOrder) return;
+    const activeOrder = orders.find((o) => o.status === "Pending");
+    if (!activeOrder) return;
 
- if (socket.connected) {
-  socket.emit("join-order", activeOrder.id);
-} else {
-  socket.once("connect", () => socket.emit("join-order", activeOrder.id));
-}
+    if (socket.connected) {
+      socket.emit("join-order", activeOrder.id);
+    } else {
+      socket.once("connect", () =>
+        socket.emit("join-order", activeOrder.id)
+      );
+    }
 
-  let watchId: number | null = null;
+    let watchId: number | null = null;
 
-  if (navigator.geolocation) {
-    watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
 
-        socket.emit("customer-location", {
-          userId,
-          orderId: activeOrder.id,
-          lat: latitude,
-          lon: longitude,
-        });
-      },
-      (err) => console.error("Location error:", err),
-      { enableHighAccuracy: true }
-    );
-  }
+          socket.emit("customer-location", {
+            userId,
+            orderId: activeOrder.id,
+            lat: latitude,
+            lon: longitude,
+          });
+        },
+        () => {},
+        { enableHighAccuracy: true }
+      );
+    }
 
-  return () => {
-    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-    socket.emit("leave-order", activeOrder.id);
-  };
-}, [status, userId, orders]);
+    return () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      socket.emit("leave-order", activeOrder.id);
+    };
+  }, [status, userId, orders]);
 
   function callNumber(phone?: string) {
     if (!phone) return alert("Delivery number not available yet");
@@ -143,34 +151,64 @@ export default function MyOrdersPage() {
     if (clean) window.location.href = `tel:${clean}`;
   }
 
-  if (status === "loading") return <div className="text-center mt-20 text-gray-500">Loading session...</div>;
-  if (!session) return <div className="text-center mt-20 text-gray-500">Please log in</div>;
-  if (loading) return <div className="text-center mt-20 text-gray-500">Loading orders...</div>;
-  if (error) return <div className="text-center mt-20 text-red-500">{error}</div>;
+  if (status === "loading")
+    return (
+      <div className="text-center mt-20 text-gray-500">
+        Loading session...
+      </div>
+    );
+
+  if (!session)
+    return (
+      <div className="text-center mt-20 text-gray-500">
+        Please log in
+      </div>
+    );
+
+  if (loading)
+    return (
+      <div className="text-center mt-20 text-gray-500">
+        Loading orders...
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="text-center mt-20 text-red-500">
+        {error}
+      </div>
+    );
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      <div className="flex items-center justify-center mb-8">
-        <ArrowLeft className="h-8 w-8 text-gray-600 mr-3" />
-        <h1 className="text-4xl font-bold text-gray-800">My Orders</h1>
+    <div className="min-h-screen bg-gray-100 px-3 sm:px-6 lg:px-12 py-6">
+      <div className="flex items-center justify-center mb-6 sm:mb-8">
+        <ArrowLeft className="h-6 w-6 sm:h-8 sm:w-8 text-gray-600 mr-2 sm:mr-3" />
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-800">
+          My Orders
+        </h1>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 max-w-6xl mx-auto">
         {orders.map((order) => (
           <motion.div
             key={order.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white shadow-lg rounded-xl border border-gray-200"
+            className="bg-white shadow-md sm:shadow-lg rounded-xl border border-gray-200"
           >
-            <div className="p-5">
-              <div className="flex justify-between items-center">
+            <div className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-800">Order #{order.id}</h2>
-                  <p className="text-sm text-gray-500">{order.date}</p>
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-800 break-all">
+                    Order #{order.id}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-gray-500">
+                    {order.date}
+                  </p>
                 </div>
+
                 <span
-                  className="px-3 py-1 rounded-full text-sm font-semibold text-white"
+                  className="self-start sm:self-auto px-3 py-1 rounded-full text-xs sm:text-sm font-semibold text-white"
                   style={{
                     backgroundColor:
                       order.status === "Delivered"
@@ -186,40 +224,59 @@ export default function MyOrdersPage() {
 
               <div className="mt-3 flex flex-col gap-2 text-sm text-gray-700">
                 {order.address && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="text-green-500" />
-                    <span>{order.address.fulladdress}</span>
+                  <div className="flex items-start gap-2">
+                    <MapPin className="text-green-500 mt-1 w-4 h-4" />
+                    <span className="text-xs sm:text-sm">
+                      {order.address.fulladdress}
+                    </span>
                   </div>
                 )}
+
                 <div className="flex items-center gap-2">
-                  <CreditCard className="text-blue-500" />
-                  <span>{order.paymentMethod === "cod" ? "Cash on Delivery" : "Paid via Card"}</span>
+                  <CreditCard className="text-blue-500 w-4 h-4" />
+                  <span className="text-xs sm:text-sm">
+                    {order.paymentMethod === "cod"
+                      ? "Cash on Delivery"
+                      : "Paid via Card"}
+                  </span>
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-3">
+              <div className="mt-4 flex flex-col sm:flex-row sm:flex-wrap gap-3">
                 <button
-                  onClick={() => callNumber(num)}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"
+                  onClick={() =>
+                    callNumber(order.deliveryBoyContact)
+                  }
+                  className="w-full sm:w-auto bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-600 transition"
                 >
                   Call Delivery Boy
                 </button>
 
                 <Link
                   href={`/Trackorder/${order.id}`}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition inline-block"
+                  className="w-full sm:w-auto text-center bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition"
                 >
                   Live Track
                 </Link>
 
                 <button
-                  onClick={() => setOpenOrderId(openOrderId === order.id ? null : order.id)}
-                  className="ml-auto flex items-center gap-1 px-3 py-2 bg-gray-200 text-gray-800 rounded-lg font-medium hover:bg-gray-300 transition"
+                  onClick={() =>
+                    setOpenOrderId(
+                      openOrderId === order.id ? null : order.id
+                    )
+                  }
+                  className="w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-1 px-3 py-2 bg-gray-200 text-gray-800 rounded-lg text-sm font-medium hover:bg-gray-300 transition"
                 >
                   {openOrderId === order.id ? (
-                    <><ArrowUp className="w-4 h-4" /> Hide Items</>
+                    <>
+                      <ArrowUp className="w-4 h-4" />
+                      Hide Items
+                    </>
                   ) : (
-                    <><ArrowDown className="w-4 h-4" /> View Items</>
+                    <>
+                      <ArrowDown className="w-4 h-4" />
+                      View Items
+                    </>
                   )}
                 </button>
               </div>
@@ -235,22 +292,29 @@ export default function MyOrdersPage() {
                     {order.items.map((item) => (
                       <div
                         key={item.id}
-                        className="flex justify-between items-center bg-gray-50 p-4 rounded-lg"
+                        className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-gray-50 p-3 sm:p-4 rounded-lg"
                       >
                         <div className="flex items-center gap-3">
                           {item.image && (
                             <img
                               src={item.image}
                               alt={item.name}
-                              className="w-14 h-14 object-cover rounded-md"
+                              className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-md"
                             />
                           )}
                           <div>
-                            <p className="font-medium text-gray-800">{item.name}</p>
-                            <p className="text-sm text-gray-500">{item.quantity} × {item.unit}</p>
+                            <p className="font-medium text-gray-800 text-sm sm:text-base">
+                              {item.name}
+                            </p>
+                            <p className="text-xs sm:text-sm text-gray-500">
+                              {item.quantity} × {item.unit}
+                            </p>
                           </div>
                         </div>
-                        <p className="font-semibold text-green-600">₹{item.price * item.quantity}</p>
+
+                        <p className="font-semibold text-green-600 text-sm sm:text-base">
+                          ₹{item.price * item.quantity}
+                        </p>
                       </div>
                     ))}
                   </motion.div>
